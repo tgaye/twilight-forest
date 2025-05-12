@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twilight Forest</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0a0a12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #c0d8e0;
+            font-size: 18px;
+            text-align: center;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+
+<base target="_self">
+</head>
+<body>
+    <div id="canvas-container">
+        <div id="loading">Loading twilight forest...</div>
+    </div>
+
+    <script>
+        const sketch = function(p) {
+            // Forest parameters
+            let trees = [];
+            let fireflies = [];
+            let particles = [];
+            let audioContext, gainNode, oscillator;
+            let isAudioEnabled = false;
+            let canvas;
+            let bgGradient;
+            let lastClickTime = 0;
+            let performanceMode = false;
+            let frameRateMonitor = 0;
+            let maxFireflies = 150;
+            let maxParticles = 300;
+            
+            // Color palettes
+            const palettes = {
+                twilight: {
+                    bg1: p.color(10, 15, 30),
+                    bg2: p.color(30, 40, 80),
+                    tree1: p.color(20, 40, 30),
+                    tree2: p.color(40, 60, 50),
+                    firefly: p.color(220, 240, 180),
+                    particle: p.color(180, 220, 255)
+                },
+                painterly: {
+                    bg1: p.color(20, 25, 50),
+                    bg2: p.color(60, 50, 90),
+                    tree1: p.color(40, 60, 50),
+                    tree2: p.color(80, 90, 70),
+                    firefly: p.color(240, 230, 160),
+                    particle: p.color(200, 180, 220)
+                }
+            };
+            let currentPalette = palettes.twilight;
+            
+            p.setup = function() {
+
+                    maxFireflies = 80;
+                    maxParticles = 150;
+          
+                
+                // Create canvas
+                canvas = p.createCanvas(
+                    p.min(p.windowWidth - 40, 1200), 
+                    p.min(p.windowHeight - 40, 800)
+                );
+                canvas.parent('canvas-container');
+                canvas.mouseClicked(handleClick);
+                
+                // Initialize background gradient
+                createBackground();
+                
+                // Create trees
+                createForest();
+                
+                // Create initial fireflies
+                for (let i = 0; i < maxFireflies / 2; i++) {
+                    fireflies.push(new Firefly());
+                }
+                
+                // Try to initialize audio
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    gainNode = audioContext.createGain();
+                    gainNode.gain.value = 0;
+                    gainNode.connect(audioContext.destination);
+                    isAudioEnabled = true;
+                } catch (e) {
+                    console.log("Audio not supported");
+                    isAudioEnabled = false;
+                }
+                
+                // Hide loading message
+                p.select('#loading').hide();
+            };
+            
+            function createBackground() {
+                bgGradient = p.createGraphics(p.width, p.height);
+                for (let y = 0; y < p.height; y++) {
+                    let inter = p.map(y, 0, p.height, 0, 1);
+                    let c = p.lerpColor(currentPalette.bg1, currentPalette.bg2, inter);
+                    bgGradient.stroke(c);
+                    bgGradient.line(0, y, p.width, y);
+                }
+            }
+            
+            function createForest() {
+                trees = [];
+                let treeCount = p.map(p.width, 300, 1200, 15, 40);
+                if (performanceMode) treeCount *= 0.7;
+                
+                for (let i = 0; i < treeCount; i++) {
+                    trees.push(new Tree());
+                }
+            }
+            
+            class Tree {
+                constructor() {
+                    this.x = p.random(-p.width * 0.1, p.width * 1.1);
+                    this.y = p.height;
+                    this.width = p.random(20, 80);
+                    this.height = p.random(p.height * 0.3, p.height * 0.7);
+                    this.speed = p.random(0.2, 0.8);
+                    this.detail = p.floor(p.random(3, 8));
+                    this.color = p.lerpColor(
+                        currentPalette.tree1, 
+                        currentPalette.tree2, 
+                        p.random(1)
+                    );
+                }
+                
+                update() {
+                    this.x -= this.speed;
+                    if (this.x < -this.width * 2) {
+                        this.x = p.width + this.width;
+                        this.y = p.height - p.random(p.height * 0.1);
+                    }
+                }
+                
+                display() {
+                    p.push();
+                    p.translate(this.x, this.y);
+                    p.fill(this.color);
+                    p.noStroke();
+                    
+                    // Draw trunk
+                    p.rect(-this.width/4, -this.height, this.width/2, this.height);
+                    
+                    // Draw leaves
+                    for (let i = 0; i < this.detail; i++) {
+                        let yPos = p.map(i, 0, this.detail-1, -this.height, -this.height * 0.1);
+                        let w = p.map(i, 0, this.detail-1, this.width * 1.5, this.width * 0.5);
+                        let h = this.height / this.detail;
+                        p.ellipse(0, yPos, w, h * 1.2);
+                    }
+                    
+                    p.pop();
+                }
+            }
+            
+            class Firefly {
+                constructor(x, y) {
+                    this.pos = p.createVector(
+                        x || p.random(p.width),
+                        y || p.random(p.height * 0.8)
+                    );
+                    this.vel = p5.Vector.random2D().mult(p.random(0.5, 1.5));
+                    this.acc = p.createVector();
+                    this.maxSpeed = 2;
+                    this.size = p.random(3, 8);
+                    this.baseSize = this.size;
+                    this.brightness = p.random(0.3, 1);
+                    this.flickerSpeed = p.random(0.05, 0.15);
+                    this.angle = p.random(p.TWO_PI);
+                    this.attracted = false;
+                    this.life = p.random(100, 200);
+                }
+                
+                update() {
+                    // Apply attraction to mouse if close
+                    let mouseDist = p.dist(this.pos.x, this.pos.y, p.mouseX, p.mouseY);
+                    if (mouseDist < 150 && p.mouseX > 0 && p.mouseY > 0) {
+                        let attraction = p.createVector(p.mouseX - this.pos.x, p.mouseY - this.pos.y);
+                        attraction.normalize().mult(0.2);
+                        this.acc.add(attraction);
+                        this.attracted = true;
+                    } else {
+                        this.attracted = false;
+                    }
+                    
+                    // Random movement
+                    if (p.random() < 0.02) {
+                        this.acc.add(p5.Vector.random2D().mult(0.1));
+                    }
+                    
+                    // Update physics
+                    this.vel.add(this.acc);
+                    this.vel.limit(this.maxSpeed);
+                    this.pos.add(this.vel);
+                    this.acc.mult(0);
+                    
+                    // Boundary check
+                    if (this.pos.x < 0) this.pos.x = p.width;
+                    if (this.pos.x > p.width) this.pos.x = 0;
+                    if (this.pos.y < 0) this.pos.y = p.height;
+                    if (this.pos.y > p.height) this.pos.y = 0;
+                    
+                    // Flicker effect
+                    this.brightness = 0.7 + p.sin(p.frameCount * this.flickerSpeed) * 0.3;
+                    this.size = this.baseSize * this.brightness;
+                    
+                    // Life cycle
+                    this.life--;
+                    if (this.life <= 0 && fireflies.length > maxFireflies * 0.3) {
+                        let index = fireflies.indexOf(this);
+                        if (index > -1) fireflies.splice(index, 1);
+                    }
+                }
+                
+                display() {
+                    p.push();
+                    p.translate(this.pos.x, this.pos.y);
+                    p.rotate(this.angle);
+                    
+                    // Glow effect
+                    let glowSize = this.size * 3;
+                    let glowAlpha = this.brightness * 50;
+                    p.fill(p.red(currentPalette.firefly), p.green(currentPalette.firefly), p.blue(currentPalette.firefly), glowAlpha);
+                    p.noStroke();
+                    p.ellipse(0, 0, glowSize, glowSize);
+                    
+                    // Firefly body
+                    p.fill(
+                        p.red(currentPalette.firefly) * this.brightness,
+                        p.green(currentPalette.firefly) * this.brightness,
+                        p.blue(currentPalette.firefly) * this.brightness
+                    );
+                    p.ellipse(0, 0, this.size, this.size);
+                    
+                    p.pop();
+                }
+            }
+            
+            class Particle {
+                constructor(x, y, color) {
+                    this.pos = p.createVector(x, y);
+                    this.vel = p5.Vector.random2D().mult(p.random(1, 3));
+                    this.acc = p.createVector();
+                    this.size = p.random(2, 6);
+                    this.life = p.random(30, 90);
+                    this.color = color || currentPalette.particle;
+                    this.alpha = 255;
+                }
+                
+                update() {
+                    this.vel.add(this.acc);
+                    this.pos.add(this.vel);
+                    this.acc.mult(0);
+                    this.vel.mult(0.98);
+                    this.life--;
+                    this.alpha = p.map(this.life, 0, 90, 0, 255);
+                }
+                
+                display() {
+                    p.fill(p.red(this.color), p.green(this.color), p.blue(this.color), this.alpha);
+                    p.noStroke();
+                    p.ellipse(this.pos.x, this.pos.y, this.size, this.size);
+                }
+                
+                isDead() {
+                    return this.life <= 0;
+                }
+            }
+            
+            function handleClick() {
+                // Limit click frequency
+                let now = p.millis();
+                if (now - lastClickTime < 300) return;
+                lastClickTime = now;
+                
+                // Create firefly burst
+                if (fireflies.length < maxFireflies) {
+                    let burstCount = p.floor(p.random(3, 8));
+                    for (let i = 0; i < burstCount; i++) {
+                        fireflies.push(new Firefly(p.mouseX, p.mouseY));
+                    }
+                }
+                
+                // Create particles
+                let particleCount = p.floor(p.random(5, 15));
+                for (let i = 0; i < particleCount; i++) {
+                    if (particles.length < maxParticles) {
+                        particles.push(new Particle(p.mouseX, p.mouseY));
+                    }
+                }
+                
+                // Play sound
+                if (isAudioEnabled && audioContext.state !== 'suspended') {
+                    playInteractionSound(p.random(0.5, 1.5));
+                }
+            }
+            
+            function playInteractionSound(pitch) {
+                if (!oscillator) {
+                    oscillator = audioContext.createOscillator();
+                    oscillator.type = 'sine';
+                    oscillator.connect(gainNode);
+                    oscillator.start();
+                }
+                
+                oscillator.frequency.setValueAtTime(300 * pitch, audioContext.currentTime);
+                
+                gainNode.gain.cancelScheduledValues(audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+            }
+            
+            p.draw = function() {
+                // Monitor frame rate and adjust quality
+                if (p.frameCount % 60 === 0) {
+                    frameRateMonitor = p.frameRate();
+                    if (frameRateMonitor < 30 && fireflies.length > maxFireflies * 0.5) {
+                        fireflies = fireflies.slice(0, p.floor(fireflies.length * 0.9));
+                    }
+                }
+                
+                // Draw background
+                p.image(bgGradient, 0, 0);
+                
+                // Draw trees
+                for (let tree of trees) {
+                    tree.update();
+                    tree.display();
+                }
+                
+                // Update and display fireflies
+                for (let i = fireflies.length - 1; i >= 0; i--) {
+                    fireflies[i].update();
+                    fireflies[i].display();
+                }
+                
+                // Update and display particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    particles[i].update();
+                    particles[i].display();
+                    if (particles[i].isDead()) {
+                        particles.splice(i, 1);
+                    }
+                }
+                
+                // Occasionally add new fireflies
+                if (p.frameCount % 120 === 0 && fireflies.length < maxFireflies * 0.8) {
+                    fireflies.push(new Firefly());
+                }
+            };
+            
+            p.windowResized = function() {
+                p.resizeCanvas(
+                    p.min(p.windowWidth - 40, 1200), 
+                    p.min(p.windowHeight - 40, 800)
+                );
+                createBackground();
+                createForest();
+            };
+            
+            p.keyPressed = function() {
+                // Toggle palette with spacebar
+                if (p.key === ' ') {
+                    currentPalette = (currentPalette === palettes.twilight) ? palettes.painterly : palettes.twilight;
+                    createBackground();
+                }
+            };
+            
+            p.touchStarted = function() {
+                // Handle audio context on iOS
+                if (isAudioEnabled && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                return false;
+            };
+        };
+
+        new p5(sketch);
+    </script>
+</body>
+</html>
